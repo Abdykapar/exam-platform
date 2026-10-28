@@ -1,11 +1,13 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { use, useState } from "react";
 import { BookOpen, Mail, Lock, User, ArrowRight, CheckCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
-export default function RegisterPage() {
+export default function RegisterPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  const { next } = use(searchParams);
+  const redirectTo = next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
   const { register } = useAuth();
   const router = useRouter();
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", password: "", role: "student" });
@@ -21,7 +23,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register(form);
-      router.push("/dashboard");
+      router.push(redirectTo);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
@@ -93,7 +95,6 @@ export default function RegisterPage() {
                   className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                   <option value="student">Student</option>
                   <option value="instructor">Instructor / Teacher</option>
-                  <option value="admin">Institution Admin</option>
                 </select>
               </div>
 

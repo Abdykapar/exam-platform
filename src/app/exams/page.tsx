@@ -3,9 +3,9 @@ import Navbar from "@/components/Navbar";
 import Link from "next/link";
 import { useState, useEffect, useCallback } from "react";
 import { Search, Clock, Users, Star, ChevronRight, Filter } from "lucide-react";
-import { api, type Exam } from "@/lib/api";
+import { api, categoryName, type Category, type Exam } from "@/lib/api";
 
-const CATEGORIES = ["All", "Mathematics", "Sciences", "Languages", "IT", "History", "Business", "Arts", "Medicine"];
+const ALL = "All";
 const DIFFICULTIES = ["All", "Beginner", "Intermediate", "Advanced"];
 
 const diffColor: Record<string, string> = {
@@ -26,12 +26,14 @@ function ExamCard({ exam }: { exam: Exam }) {
           </span>
         </div>
         <h3 className="font-bold text-slate-800 text-base mb-1.5 leading-snug">{exam.title}</h3>
+        {categoryName(exam.category) && <p className="text-xs font-semibold text-indigo-600 mb-1.5">{categoryName(exam.category)}</p>}
         <p className="text-slate-500 text-sm line-clamp-2 mb-3">{exam.description}</p>
         {instructor && (
           <p className="text-xs text-slate-400 mb-3">by {instructor.firstName} {instructor.lastName}</p>
         )}
         <div className="flex items-center gap-4 text-xs text-slate-500">
           <span className="flex items-center gap-1"><Clock size={12} /> {exam.duration} min</span>
+          <span>{exam.questionCount} questions</span>
           <span className="flex items-center gap-1"><Users size={12} /> {exam.enrolledCount || 0}</span>
           {exam.rating > 0 && <span className="flex items-center gap-1"><Star size={12} className="text-amber-400" /> {exam.rating.toFixed(1)}</span>}
         </div>
@@ -52,7 +54,9 @@ export default function ExamsPage() {
   const [pages, setPages] = useState(1);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("All");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [category, setCategory] = useState(ALL); // slug
+  const [error, setError] = useState("");
   const [difficulty, setDifficulty] = useState("All");
   const [loading, setLoading] = useState(true);
 
@@ -62,20 +66,26 @@ export default function ExamsPage() {
       const res = await api.exams.list({
         page,
         ...(search && { search }),
-        ...(category !== "All" && { category }),
+        ...(category !== ALL && { category }),
         ...(difficulty !== "All" && { difficulty }),
       });
       setExams(res.data.exams);
       setTotal(res.data.total);
       setPages(res.data.pages);
-    } catch {
+      setError("");
+    } catch (err) {
       setExams([]);
+      setError(err instanceof Error ? err.message : "Failed to load exams");
     } finally {
       setLoading(false);
     }
   }, [page, search, category, difficulty]);
 
   useEffect(() => { fetchExams(); }, [fetchExams]);
+
+  useEffect(() => {
+    api.categories.list().then(res => setCategories(res.data.categories)).catch(() => {});
+  }, []);
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -103,10 +113,11 @@ export default function ExamsPage() {
             <div>
               <div className="flex items-center gap-2 mb-3 text-slate-700 font-bold text-sm"><Filter size={15} /> Category</div>
               <div className="space-y-1">
-                {CATEGORIES.map(c => (
-                  <button key={c} onClick={() => { setCategory(c); setPage(1); }}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${category === c ? "bg-indigo-600 text-white font-semibold" : "text-slate-600 hover:bg-slate-50"}`}>
-                    {c}
+                {[{ slug: ALL, name: ALL, emoji: "", examCount: undefined }, ...categories].map(c => (
+                  <button key={c.slug} onClick={() => { setCategory(c.slug); setPage(1); }}
+                    className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-lg text-sm transition-colors ${category === c.slug ? "bg-indigo-600 text-white font-semibold" : "text-slate-600 hover:bg-slate-50"}`}>
+                    <span>{c.emoji} {c.name}</span>
+                    {c.examCount !== undefined && <span className="text-xs opacity-70">{c.examCount}</span>}
                   </button>
                 ))}
               </div>
@@ -137,7 +148,7 @@ export default function ExamsPage() {
               <p className="text-5xl mb-4">📭</p>
               <p className="text-lg font-semibold">No exams found</p>
               <p className="text-sm mt-1">
-                {total === 0 ? "Start the API server and seed the database to see exams." : "Try changing your filters."}
+                {error || (category !== ALL || difficulty !== ALL || search ? "Try changing your filters." : "No exams have been published yet.")}
               </p>
             </div>
           ) : (

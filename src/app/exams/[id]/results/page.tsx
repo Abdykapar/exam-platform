@@ -1,55 +1,107 @@
+"use client";
 import Navbar from "@/components/Navbar";
 import Link from "next/link";
-import { Award, CheckCircle, XCircle, Clock, BarChart3, Download, Share2, RotateCcw } from "lucide-react";
+import { use, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { CheckCircle, XCircle, BarChart3, RotateCcw, Flag, Lightbulb } from "lucide-react";
+import { api, isResultView, type ResultView, type ReviewQuestion } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { formatDate, formatDuration, OPTION_LETTERS } from "@/lib/format";
 
-export default function ResultsPage({ params }: { params: { id: string } }) {
-  const result = {
-    examTitle: "Mathematics Fundamentals",
-    score: 78,
-    totalQuestions: 10,
-    correct: 8,
-    wrong: 2,
-    timeTaken: "32:14",
-    passed: true,
-    passingScore: 70,
-    grade: "B+",
-    date: "August 4, 2024",
-  };
+function chosen(q: ReviewQuestion) {
+  const idx = q.type === "multiple" ? q.selectedIndexes : q.selectedIndex != null ? [q.selectedIndex] : [];
+  return idx.map(i => `${OPTION_LETTERS[i]}. ${q.options[i]}`).join(", ");
+}
 
-  const questions = [
-    { text: "What is the result of 2x + 5 = 15?", yourAnswer: "x = 5", correct: "x = 5", isCorrect: true },
-    { text: "Which of the following is a prime number?", yourAnswer: "17", correct: "17", isCorrect: true },
-    { text: "What is the area of a circle with radius 7?", yourAnswer: "153.86", correct: "153.86", isCorrect: true },
-    { text: "Simplify: (3² + 4²)", yourAnswer: "25", correct: "25", isCorrect: true },
-    { text: "What is the slope of y = 3x − 2?", yourAnswer: "2", correct: "3", isCorrect: false },
-    { text: "Third angle if two are 60° and 80°?", yourAnswer: "40°", correct: "40°", isCorrect: true },
-    { text: "What is √144?", yourAnswer: "12", correct: "12", isCorrect: true },
-    { text: "Solve 5! (factorial)", yourAnswer: "60", correct: "120", isCorrect: false },
-    { text: "What is 15% of 200?", yourAnswer: "30", correct: "30", isCorrect: true },
-    { text: "Which equals x² − 9?", yourAnswer: "(x−3)(x+3)", correct: "(x−3)(x+3)", isCorrect: true },
-  ];
+function correct(q: ReviewQuestion) {
+  const idx = q.type === "multiple" ? q.correctIndexes ?? [] : q.correctIndex != null ? [q.correctIndex] : [];
+  return idx.map(i => `${OPTION_LETTERS[i]}. ${q.options[i]}`).join(", ");
+}
+
+export default function ResultsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ attempt?: string }>;
+}) {
+  const { id } = use(params);
+  const { attempt: attemptParam } = use(searchParams);
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  const [result, setResult] = useState<ResultView | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      router.replace(`/login?next=${encodeURIComponent(`/exams/${id}/results${attemptParam ? `?attempt=${attemptParam}` : ""}`)}`);
+      return;
+    }
+    (async () => {
+      let attemptId = attemptParam;
+      if (!attemptId) {
+        // No attempt in the URL: show the latest finished attempt for this exam
+        const { data } = await api.attempts.list();
+        attemptId = data.attempts.find(a => a.exam === id && a.status !== "in_progress")?._id;
+        if (!attemptId) throw new Error("You haven't finished this exam yet.");
+      }
+      const { data } = await api.attempts.get(attemptId);
+      if (!isResultView(data)) {
+        router.replace(`/exams/${id}/take`);
+        return;
+      }
+      setResult(data);
+    })().catch(err => setError(err instanceof Error ? err.message : "Failed to load results"));
+  }, [authLoading, user, id, attemptParam, router]);
+
+  if (error || !result) {
+    return (
+      <main>
+        <Navbar />
+        <div className="max-w-xl mx-auto py-24 px-4 text-center text-slate-500">
+          {error ? (
+            <>
+              <p className="text-lg font-semibold text-slate-700">{error}</p>
+              <Link href={`/exams/${id}`} className="inline-block mt-6 text-indigo-600 font-semibold hover:underline">Back to exam</Link>
+            </>
+          ) : (
+            <div className="h-64 bg-slate-100 rounded-2xl animate-pulse" />
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  const { attempt, exam, review } = result;
+  const wrong = attempt.totalQuestions - attempt.correctCount;
+  const timeTaken = formatDuration(attempt.timeTakenSeconds);
 
   return (
     <main>
       <Navbar />
 
       {/* Hero result banner */}
-      <section className={`py-16 px-4 text-center ${result.passed
+      <section className={`py-16 px-4 text-center ${attempt.passed
         ? "bg-gradient-to-br from-emerald-600 to-teal-600"
         : "bg-gradient-to-br from-red-600 to-rose-600"}`}>
         <div className="max-w-2xl mx-auto text-white">
-          <div className="text-6xl mb-4">{result.passed ? "🎉" : "😔"}</div>
-          <div className="text-xl font-semibold mb-1 text-white/80">{result.examTitle}</div>
-          <div className="text-8xl font-extrabold mb-3">{result.score}%</div>
-          <div className={`inline-flex items-center gap-2 px-5 py-2 rounded-full text-lg font-bold mb-6 ${result.passed ? "bg-white/20 text-white" : "bg-white/20 text-white"}`}>
-            {result.passed ? <CheckCircle size={20} /> : <XCircle size={20} />}
-            {result.passed ? "Passed" : "Not Passed"} — Grade {result.grade}
+          <div className="text-6xl mb-4">{attempt.passed ? "🎉" : "😔"}</div>
+          <div className="text-xl font-semibold mb-1 text-white/80">{exam.emoji} {exam.title}</div>
+          <div className="text-8xl font-extrabold mb-3">{attempt.score}%</div>
+          <div className="inline-flex items-center gap-2 px-5 py-2 rounded-full text-lg font-bold mb-3 bg-white/20 text-white">
+            {attempt.passed ? <CheckCircle size={20} /> : <XCircle size={20} />}
+            {attempt.passed ? "Passed" : "Not Passed"}
+          </div>
+          <div className="text-sm text-white/70 mb-6">
+            {formatDate(attempt.submittedAt)}
+            {attempt.status === "timed_out" && " · Time ran out, graded from your saved answers"}
           </div>
           <div className="flex justify-center gap-8 text-sm">
             {[
-              [`${result.correct}/${result.totalQuestions}`, "Correct"],
-              [result.timeTaken, "Time Taken"],
-              [`${result.passingScore}%`, "Pass Mark"],
+              [`${attempt.correctCount}/${attempt.totalQuestions}`, "Correct"],
+              [timeTaken, "Time Taken"],
+              [`${exam.passingScore}%`, "Pass Mark"],
             ].map(([v, l]) => (
               <div key={l} className="text-center">
                 <div className="text-2xl font-bold">{v}</div>
@@ -64,32 +116,25 @@ export default function ResultsPage({ params }: { params: { id: string } }) {
 
         {/* Actions */}
         <div className="flex flex-wrap gap-3 justify-center">
-          {result.passed && (
-            <button className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-3 rounded-xl transition-colors shadow-sm">
-              <Award size={18} /> Download Certificate
-            </button>
-          )}
-          <button className="flex items-center gap-2 border border-slate-200 text-slate-700 font-semibold px-5 py-3 rounded-xl hover:bg-slate-50 transition-colors">
-            <Download size={16} /> Download PDF
-          </button>
-          <button className="flex items-center gap-2 border border-slate-200 text-slate-700 font-semibold px-5 py-3 rounded-xl hover:bg-slate-50 transition-colors">
-            <Share2 size={16} /> Share Results
-          </button>
-          <Link href={`/exams/${params.id}/take`}
+          <Link href={`/exams/${id}`}
             className="flex items-center gap-2 border border-slate-200 text-slate-700 font-semibold px-5 py-3 rounded-xl hover:bg-slate-50 transition-colors">
             <RotateCcw size={16} /> Retake Exam
+          </Link>
+          <Link href="/dashboard"
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-5 py-3 rounded-xl transition-colors shadow-sm">
+            <BarChart3 size={16} /> My Dashboard
           </Link>
         </div>
 
         {/* Score breakdown */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
           <h2 className="font-bold text-slate-800 text-lg mb-5 flex items-center gap-2"><BarChart3 size={20} className="text-indigo-600" /> Score Breakdown</h2>
-          <div className="grid sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
-              { label: "Total Score", value: `${result.score}%`, color: "bg-indigo-50 text-indigo-700" },
-              { label: "Correct", value: result.correct, color: "bg-emerald-50 text-emerald-700" },
-              { label: "Incorrect", value: result.wrong, color: "bg-red-50 text-red-700" },
-              { label: "Time Used", value: result.timeTaken, color: "bg-amber-50 text-amber-700" },
+              { label: "Total Score", value: `${attempt.score}%`, color: "bg-indigo-50 text-indigo-700" },
+              { label: "Correct", value: attempt.correctCount, color: "bg-emerald-50 text-emerald-700" },
+              { label: "Incorrect", value: wrong, color: "bg-red-50 text-red-700" },
+              { label: "Time Used", value: timeTaken, color: "bg-amber-50 text-amber-700" },
             ].map(({ label, value, color }) => (
               <div key={label} className={`${color} rounded-xl p-4 text-center`}>
                 <div className="text-2xl font-extrabold">{value}</div>
@@ -101,14 +146,14 @@ export default function ResultsPage({ params }: { params: { id: string } }) {
           {/* Score bar */}
           <div className="mt-6">
             <div className="flex justify-between text-xs text-slate-500 mb-2">
-              <span>Your score: {result.score}%</span>
-              <span>Pass mark: {result.passingScore}%</span>
+              <span>Your score: {attempt.score}%</span>
+              <span>Pass mark: {exam.passingScore}%</span>
             </div>
             <div className="relative h-4 bg-slate-100 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full ${result.passed ? "bg-emerald-500" : "bg-red-500"} transition-all`}
-                style={{ width: `${result.score}%` }} />
+              <div className={`h-full rounded-full ${attempt.passed ? "bg-emerald-500" : "bg-red-500"} transition-all`}
+                style={{ width: `${attempt.score}%` }} />
               <div className="absolute top-0 bottom-0 w-0.5 bg-indigo-500"
-                style={{ left: `${result.passingScore}%` }} />
+                style={{ left: `${exam.passingScore}%` }} />
             </div>
           </div>
         </div>
@@ -117,27 +162,35 @@ export default function ResultsPage({ params }: { params: { id: string } }) {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
           <h2 className="font-bold text-slate-800 text-lg mb-5">Question Review</h2>
           <div className="space-y-4">
-            {questions.map((q, i) => (
-              <div key={i} className={`p-4 rounded-xl border ${q.isCorrect ? "border-emerald-200 bg-emerald-50/50" : "border-red-200 bg-red-50/50"}`}>
+            {review.map(q => (
+              <div key={q.index} className={`p-4 rounded-xl border ${q.isCorrect ? "border-emerald-200 bg-emerald-50/50" : "border-red-200 bg-red-50/50"}`}>
                 <div className="flex items-start gap-3">
                   <div className={`shrink-0 mt-0.5 ${q.isCorrect ? "text-emerald-500" : "text-red-500"}`}>
                     {q.isCorrect ? <CheckCircle size={18} /> : <XCircle size={18} />}
                   </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-slate-800 text-sm mb-2">{i + 1}. {q.text}</p>
-                    <div className="flex flex-wrap gap-4 text-xs">
-                      <span className={`flex items-center gap-1 ${q.isCorrect ? "text-emerald-700" : "text-red-700"}`}>
-                        Your answer: <strong>{q.yourAnswer}</strong>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-slate-800 text-sm mb-2 whitespace-pre-line">
+                      {q.index + 1}. {q.text}
+                      {q.isFlagged && <Flag size={12} className="inline ml-2 text-amber-500" />}
+                    </p>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                      <span className={q.isCorrect ? "text-emerald-700" : "text-red-700"}>
+                        Your answer: <strong>{chosen(q) || "Not answered"}</strong>
                       </span>
                       {!q.isCorrect && (
-                        <span className="flex items-center gap-1 text-emerald-700">
-                          Correct: <strong>{q.correct}</strong>
+                        <span className="text-emerald-700">
+                          Correct: <strong>{correct(q)}</strong>
                         </span>
                       )}
                     </div>
+                    {q.explanation && (
+                      <p className="mt-2 text-xs text-slate-600 flex items-start gap-1.5">
+                        <Lightbulb size={13} className="text-amber-500 shrink-0 mt-px" /> {q.explanation}
+                      </p>
+                    )}
                   </div>
                   <span className={`shrink-0 text-xs font-bold px-2 py-0.5 rounded-full ${q.isCorrect ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-                    {q.isCorrect ? "+1" : "0"}
+                    {q.isCorrect ? `+${q.points}` : "0"}
                   </span>
                 </div>
               </div>
@@ -148,11 +201,10 @@ export default function ResultsPage({ params }: { params: { id: string } }) {
         {/* Next steps */}
         <div className="bg-gradient-to-br from-indigo-600 to-indigo-700 rounded-2xl p-6 text-white">
           <h2 className="font-bold text-lg mb-4">What&apos;s Next?</h2>
-          <div className="grid sm:grid-cols-3 gap-4">
+          <div className="grid sm:grid-cols-2 gap-4">
             {[
-              { emoji: "📚", title: "Practice More", desc: "Try practice tests to improve your weak areas.", href: "/exams" },
-              { emoji: "🏆", title: "Leaderboard", desc: "See how you rank against other students.", href: "/dashboard" },
-              { emoji: "🎓", title: "Next Exam", desc: "Browse more exams in Mathematics.", href: "/exams" },
+              { emoji: "📚", title: "Practice More", desc: "Browse other exams to keep improving.", href: "/exams" },
+              { emoji: "📈", title: "Track Progress", desc: "See your score history on the dashboard.", href: "/dashboard" },
             ].map(({ emoji, title, desc, href }) => (
               <Link key={title} href={href} className="bg-white/10 hover:bg-white/20 rounded-xl p-4 transition-colors block">
                 <span className="text-2xl">{emoji}</span>

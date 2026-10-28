@@ -1,10 +1,20 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { BookOpen, Menu, X, Bell, User, ChevronDown } from "lucide-react";
+import { BookOpen, Menu, X, LogOut } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
+  const { user, loading, logout } = useAuth();
+  const router = useRouter();
+
+  const handleLogout = () => {
+    logout();
+    setOpen(false);
+    router.push("/");
+  };
 
   return (
     <header className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-slate-200 shadow-sm">
@@ -28,12 +38,28 @@ export default function Navbar() {
 
           {/* Actions */}
           <div className="hidden md:flex items-center gap-3">
-            <Link href="/login" className="text-sm font-medium text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors">
-              Sign In
-            </Link>
-            <Link href="/register" className="text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg transition-colors shadow-sm">
-              Get Started
-            </Link>
+            {loading ? null : user ? (
+              <>
+                <Link href="/dashboard" className="text-sm font-medium text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors">
+                  Dashboard
+                </Link>
+                <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold" title={`${user.firstName} ${user.lastName}`}>
+                  {user.firstName[0]}{user.lastName[0]}
+                </div>
+                <button onClick={handleLogout} title="Log out" className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors">
+                  <LogOut size={17} />
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="text-sm font-medium text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors">
+                  Sign In
+                </Link>
+                <Link href="/register" className="text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg transition-colors shadow-sm">
+                  Get Started
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Mobile burger */}
@@ -53,8 +79,17 @@ export default function Navbar() {
             </Link>
           ))}
           <div className="pt-3 border-t border-slate-200 flex flex-col gap-2">
-            <Link href="/login" className="block text-center px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg">Sign In</Link>
-            <Link href="/register" className="block text-center px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg">Get Started</Link>
+            {user ? (
+              <>
+                <Link href="/dashboard" onClick={() => setOpen(false)} className="block text-center px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg">Dashboard</Link>
+                <button onClick={handleLogout} className="block text-center px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg">Log out</button>
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="block text-center px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg">Sign In</Link>
+                <Link href="/register" className="block text-center px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg">Get Started</Link>
+              </>
+            )}
           </div>
         </div>
       )}

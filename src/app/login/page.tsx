@@ -1,11 +1,14 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { use, useState } from "react";
 import { BookOpen, Mail, Lock, Eye, ArrowRight } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
-export default function LoginPage() {
+export default function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  const { next } = use(searchParams);
+  // Only allow relative paths, so ?next= cannot redirect to another site
+  const redirectTo = next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
   const { login } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -20,7 +23,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
-      router.push("/dashboard");
+      router.push(redirectTo);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
@@ -92,7 +95,7 @@ export default function LoginPage() {
 
           <p className="text-center text-sm text-slate-500 mt-6">
             Don&apos;t have an account?{" "}
-            <Link href="/register" className="text-indigo-600 font-semibold hover:text-indigo-700">Sign up free</Link>
+            <Link href={next ? `/register?next=${encodeURIComponent(next)}` : "/register"} className="text-indigo-600 font-semibold hover:text-indigo-700">Sign up free</Link>
           </p>
         </div>
       </div>
