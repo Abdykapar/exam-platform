@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, Award, Target, BarChart3, Clock, CheckCircle, XCircle, ChevronRight, LogOut, PlayCircle } from "lucide-react";
+import { BookOpen, Award, Target, BarChart3, Clock, CheckCircle, XCircle, ChevronRight, LogOut, PlayCircle, PenSquare } from "lucide-react";
 import { api, type Attempt, type DashboardStats, type RecentAttempt } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { formatDate, formatDuration } from "@/lib/format";
@@ -18,6 +18,7 @@ function Sidebar({ name, role, initials }: { name: string; role: string; initial
   const navItems = [
     { icon: BarChart3, label: "Dashboard", href: "/dashboard", active: true },
     { icon: BookOpen, label: "Browse Exams", href: "/exams" },
+    ...(role !== "student" ? [{ icon: PenSquare, label: "Create Exams", href: "/admin" }] : []),
   ];
   return (
     <aside className="w-64 shrink-0 hidden lg:block">

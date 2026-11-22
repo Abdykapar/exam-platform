@@ -110,11 +110,51 @@ export const api = {
       request<Res<ResultView>>(`/attempts/${attemptId}/submit`, json("POST", body)),
   },
 
+  offline: {
+    list: (exam?: string) =>
+      request<Res<{ sessions: OfflineSession[] }>>(`/offline-sessions${exam ? `?exam=${exam}` : ""}`),
+    create: (body: { exam: string; name: string; date?: string; variants: number }) =>
+      request<Res<{ session: OfflineSession }>>("/offline-sessions", json("POST", body)),
+    get: (id: string) => request<Res<{ session: OfflineSessionFull }>>(`/offline-sessions/${id}`),
+    remove: (id: string) => request<Res<object>>(`/offline-sessions/${id}`, json("DELETE")),
+    sheets: (id: string) => request<Res<{ sheets: OfflineSheet[] }>>(`/offline-sessions/${id}/sheets`),
+    addSheet: (id: string, body: SheetInput) =>
+      request<Res<{ sheet: OfflineSheet }>>(`/offline-sessions/${id}/sheets`, json("POST", body)),
+    updateSheet: (id: string, sheetId: string, body: Partial<SheetInput>) =>
+      request<Res<{ sheet: OfflineSheet }>>(`/offline-sessions/${id}/sheets/${sheetId}`, json("PATCH", body)),
+    removeSheet: (id: string, sheetId: string) =>
+      request<Res<object>>(`/offline-sessions/${id}/sheets/${sheetId}`, json("DELETE")),
+    pdfPath: (id: string, kind: PdfKind, variant?: string) =>
+      `/offline-sessions/${id}/pdf/${kind}${variant ? `?variant=${variant}` : ""}`,
+    csvPath: (id: string) => `/offline-sessions/${id}/results.csv`,
+  },
+
   dashboard: {
     get: () =>
       request<Res<{ stats: DashboardStats; recentAttempts: RecentAttempt[]; scoreHistory: number[] }>>("/dashboard"),
   },
 };
+
+/** Downloads an authenticated file (PDF, CSV) and saves it in the browser. */
+export async function download(path: string, filename: string) {
+  const token = getToken();
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  } catch {
+    throw new ApiError("Cannot reach the server. Is the backend running?", 0);
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data.message || "Download failed", res.status);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
 
 export const isResultView = (v: TakingView | ResultView): v is ResultView => "review" in v;
 
@@ -281,4 +321,49 @@ export interface RecentAttempt {
   passed: boolean;
   submittedAt: string;
   timeTakenSeconds: number;
+}
+
+export type PdfKind = "answer-sheet" | "booklet" | "answer-key";
+
+export interface OfflineSession {
+  _id: string;
+  exam: string;
+  name: string;
+  date?: string;
+  examTitle: string;
+  examEmoji?: string;
+  passingScore: number;
+  duration: number;
+  versions: string[];
+  questionCount: number;
+  createdAt: string;
+  sheetCount: number;
+  avgScore: number;
+  passedCount: number;
+  reviewCount: number;
+}
+
+export interface OfflineSessionFull extends OfflineSession {
+  variants: { letter: string; questions: InstructorQuestion[] }[];
+}
+
+export interface SheetInput {
+  variant: string;
+  studentName?: string;
+  answers: Answer[];
+}
+
+export interface OfflineSheet {
+  _id: string;
+  number: number;
+  variant: string;
+  studentName: string;
+  answers: Answer[];
+  score: number;
+  correctCount: number;
+  totalQuestions: number;
+  passed: boolean;
+  source: "manual" | "scan";
+  status: "graded" | "needs_review";
+  createdAt: string;
 }

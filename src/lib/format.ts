@@ -12,3 +12,8 @@ export function formatDate(iso?: string) {
 }
 
 export const OPTION_LETTERS = ["A", "B", "C", "D", "E", "F"];
+
+/** Safe file name that keeps non-Latin letters: "9Б класс" → "9Б-класс" */
+export function fileSafe(name: string) {
+  return name.trim().replace(/[\\/:*?"<>|]+/g, "").replace(/\s+/g, "-").slice(0, 80);
+}

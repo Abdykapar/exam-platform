@@ -9,6 +9,7 @@ export default function Navbar() {
   const [open, setOpen] = useState(false);
   const { user, loading, logout } = useAuth();
   const router = useRouter();
+  const canManage = user && user.role !== "student";
 
   const handleLogout = () => {
     logout();
@@ -40,6 +41,11 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-3">
             {loading ? null : user ? (
               <>
+                {canManage && (
+                  <Link href="/admin" className="text-sm font-medium text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors">
+                    Admin
+                  </Link>
+                )}
                 <Link href="/dashboard" className="text-sm font-medium text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors">
                   Dashboard
                 </Link>
@@ -81,6 +87,7 @@ export default function Navbar() {
           <div className="pt-3 border-t border-slate-200 flex flex-col gap-2">
             {user ? (
               <>
+                {canManage && <Link href="/admin" onClick={() => setOpen(false)} className="block text-center px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg">Admin</Link>}
                 <Link href="/dashboard" onClick={() => setOpen(false)} className="block text-center px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg">Dashboard</Link>
                 <button onClick={handleLogout} className="block text-center px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg">Log out</button>
               </>
