@@ -1,13 +1,17 @@
 "use client";
-import { use, useState, useEffect, useCallback, useRef } from "react";
+import { use, useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Clock, ChevronLeft, ChevronRight, BookOpen, AlertCircle, Flag, Check, Loader2 } from "lucide-react";
-import { api, type Answer, type TakingView } from "@/lib/api";
+import { api, type Answer, type ProctoringSettings, type TakingView } from "@/lib/api";
+import ExamGuard from "@/components/exam/ExamGuard";
 import { useAuth } from "@/lib/auth-context";
 import { formatDuration, OPTION_LETTERS } from "@/lib/format";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
+
+const AUTOSAVE_MS = 15_000;
+const AUTO_SUBMIT_REDIRECT_MS = 2_500;
 
 const isAnswered = (a?: Answer) => !!a && (a.selectedIndex != null || (a.selectedIndexes?.length ?? 0) > 0);
 
@@ -24,13 +28,39 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [autoSubmitted, setAutoSubmitted] = useState(false);
+  /** Public exam info, loaded first to know whether the exam is proctored. */
+  const [meta, setMeta] = useState<{ title: string; proctoring: ProctoringSettings | null } | null>(null);
 
   const started = useRef(false);
   const submitted = useRef(false);
   const dirty = useRef(false);
   const clockOffset = useRef(0); // server time − client time, in ms
+  const answersRef = useRef(answers);
+  const startPromise = useRef<Promise<void> | null>(null);
 
-  // Start (or resume) the attempt once the user is known
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
+
+  /** Creates or resumes the attempt; safe to call more than once. */
+  const startAttempt = useCallback(() => {
+    startPromise.current ??= api.exams.start(id)
+      .then(res => {
+        const v = res.data;
+        clockOffset.current = new Date(v.serverNow).getTime() - Date.now();
+        setAnswers(Object.fromEntries(v.attempt.answers.map(a => [a.questionIndex, a])));
+        setView(v);
+      })
+      .catch(err => {
+        startPromise.current = null;
+        throw err;
+      });
+    return startPromise.current;
+  }, [id]);
+
+  // Load the exam once the user is known. Unproctored exams start right away;
+  // proctored ones wait for the student to click Start (fullscreen needs a click).
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
@@ -39,17 +69,18 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
     }
     if (started.current) return;
     started.current = true;
-    api.exams.start(id)
+    api.exams.get(id)
       .then(res => {
-        const v = res.data;
-        clockOffset.current = new Date(v.serverNow).getTime() - Date.now();
-        setAnswers(Object.fromEntries(v.attempt.answers.map(a => [a.questionIndex, a])));
-        setView(v);
+        const p = res.data.exam.proctoring;
+        setMeta({ title: res.data.exam.title, proctoring: p?.enabled ? p : null });
+        if (!p?.enabled) return startAttempt();
       })
       .catch(err => setError(err instanceof Error ? err.message : "Could not start the exam"));
-  }, [authLoading, user, id, router]);
+  }, [authLoading, user, id, router, startAttempt]);
 
   const attemptId = view?.attempt._id;
+  // Once loaded, the attempt's snapshot decides: editing the exam mid-attempt changes nothing
+  const proctoring = view ? (view.attempt.proctoring?.enabled ? view.attempt.proctoring : null) : meta?.proctoring;
 
   const submit = useCallback(async (timedOut = false) => {
     if (!attemptId || submitted.current) return;
@@ -79,17 +110,44 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
     return () => clearInterval(t);
   }, [view, submit]);
 
-  // Autosave, debounced
+  /** Saves unsaved answers now. Also run before each proctoring violation, so an auto-submit grades them. */
+  const flushSave = useCallback(async () => {
+    if (!attemptId || !dirty.current || submitted.current) return;
+    dirty.current = false;
+    setSaveState("saving");
+    try {
+      await api.attempts.saveAnswers(attemptId, Object.values(answersRef.current));
+      setSaveState("saved");
+    } catch {
+      dirty.current = true;
+      setSaveState("error");
+    }
+  }, [attemptId]);
+
+  // Autosave: debounced on each change, plus every 15s as a safety net (e.g. after a failed save)
   useEffect(() => {
-    if (!attemptId || !dirty.current) return;
-    const t = setTimeout(() => {
-      setSaveState("saving");
-      api.attempts.saveAnswers(attemptId, Object.values(answers))
-        .then(() => { dirty.current = false; setSaveState("saved"); })
-        .catch(() => setSaveState("error"));
-    }, 1200);
+    if (!dirty.current) return;
+    const t = setTimeout(flushSave, 1200);
     return () => clearTimeout(t);
-  }, [answers, attemptId]);
+  }, [answers, flushSave]);
+
+  useEffect(() => {
+    const t = setInterval(flushSave, AUTOSAVE_MS);
+    return () => clearInterval(t);
+  }, [flushSave]);
+
+  // The server already ended the attempt (proctoring limit): show the notice, then the results
+  const onAutoSubmit = useCallback(() => {
+    if (!attemptId || submitted.current) return;
+    submitted.current = true;
+    setAutoSubmitted(true);
+    setSubmitting(true);
+    setConfirming(false);
+    // Idempotent: returns the auto-submitted result; only submits here if the server was unreachable
+    api.attempts.submit(attemptId, { answers: Object.values(answersRef.current) })
+      .catch(() => undefined)
+      .finally(() => setTimeout(() => router.push(`/exams/${id}/results?attempt=${attemptId}`), AUTO_SUBMIT_REDIRECT_MS));
+  }, [attemptId, id, router]);
 
   // Warn before leaving mid-exam
   useEffect(() => {
@@ -148,8 +206,24 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
     );
   }
 
+  const guard = (content: ReactNode) =>
+    proctoring ? (
+      <ExamGuard
+        settings={proctoring}
+        examTitle={view?.exam.title ?? meta?.title ?? ""}
+        attemptId={attemptId ?? null}
+        initialViolations={view?.attempt.violationCount ?? 0}
+        onStart={startAttempt}
+        onAutoSubmit={onAutoSubmit}
+        beforeReport={flushSave}
+        active={autoSubmitted || !submitting}
+      >
+        {content}
+      </ExamGuard>
+    ) : content;
+
   if (!view || !q || timeLeft === null) {
-    return (
+    return guard(
       <div className="min-h-screen bg-slate-100 flex items-center justify-center text-slate-500 gap-2">
         <Loader2 size={18} className="animate-spin" /> Preparing your exam…
       </div>
@@ -164,7 +238,7 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
   const flagged = questions.map((_, i) => i).filter(i => answers[i]?.isFlagged);
   const a = answers[current];
 
-  return (
+  return guard(
     <div className="min-h-screen bg-slate-100 flex flex-col">
       {/* Top bar */}
       <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30">

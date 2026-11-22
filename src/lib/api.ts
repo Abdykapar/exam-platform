@@ -32,6 +32,20 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * POST that survives the page being closed (keepalive). Used instead of
+ * navigator.sendBeacon, which can't send the Authorization header. Falls back to a
+ * normal request in browsers that refuse keepalive with a CORS preflight.
+ */
+async function keepalive<T>(path: string, body: unknown): Promise<T> {
+  try {
+    return await request<T>(path, { ...json("POST", body), keepalive: true });
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 0) return request<T>(path, json("POST", body));
+    throw err;
+  }
+}
+
 const json = (method: string, body?: unknown): RequestInit => ({
   method,
   ...(body !== undefined && { body: JSON.stringify(body) }),
@@ -84,7 +98,17 @@ export const api = {
     exams: {
       list: () => request<Res<{ exams: Exam[] }>>("/instructor/exams"),
       get: (id: string) => request<Res<{ exam: InstructorExam }>>(`/instructor/exams/${id}`),
+      attempts: (id: string) => request<Res<{ attempts: InstructorAttempt[] }>>(`/instructor/exams/${id}/attempts`),
     },
+    attempts: {
+      violations: (attemptId: string) =>
+        request<Res<{ attempt: InstructorAttempt; violations: Violation[] }>>(`/instructor/attempts/${attemptId}/violations`),
+    },
+  },
+
+  proctoring: {
+    report: (body: ViolationReport) => keepalive<Res<ProctorState>>("/exam/violation", body),
+    heartbeat: (attemptId: string) => keepalive<Res<ProctorState>>("/exam/heartbeat", { attemptId }),
   },
 
   questions: {
@@ -105,7 +129,7 @@ export const api = {
     /** In-progress attempts return the taking view; finished ones return the result view. */
     get: (attemptId: string) => request<Res<TakingView | ResultView>>(`/attempts/${attemptId}`),
     saveAnswers: (attemptId: string, answers: Answer[]) =>
-      request<Res<{ savedAt: string }>>(`/attempts/${attemptId}/answers`, json("PATCH", { answers })),
+      request<Res<{ savedAt: string; proctoring?: ProctorState }>>(`/attempts/${attemptId}/answers`, json("PATCH", { answers })),
     submit: (attemptId: string, body: { answers: Answer[]; timedOut?: boolean }) =>
       request<Res<ResultView>>(`/attempts/${attemptId}/submit`, json("POST", body)),
   },
@@ -204,6 +228,8 @@ export interface Exam {
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
   maxAttempts: number;
+  /** Missing on exams created before proctoring existed. */
+  proctoring?: ProctoringSettings;
   isPublished: boolean;
   createdAt: string;
   updatedAt: string;
@@ -221,6 +247,66 @@ export interface ExamInput {
   shuffleQuestions?: boolean;
   shuffleOptions?: boolean;
   maxAttempts?: number;
+  proctoring?: ProctoringSettings;
+}
+
+export interface ProctoringSettings {
+  enabled: boolean;
+  maxViolations: number;
+  requireFullscreen: boolean;
+}
+
+export const DEFAULT_PROCTORING: ProctoringSettings = { enabled: false, maxViolations: 3, requireFullscreen: true };
+
+/** Mirrors the server. Counted ones are "left the exam"; the rest were blocked, so only logged. */
+export const COUNTED_VIOLATIONS = [
+  "tab_hidden", "window_blur", "fullscreen_exit", "multiple_monitors", "print_screen", "heartbeat_missed",
+] as const;
+export const BLOCKED_VIOLATIONS = [
+  "copy", "cut", "paste", "context_menu", "blocked_shortcut", "devtools_shortcut",
+] as const;
+export type ViolationType = (typeof COUNTED_VIOLATIONS)[number] | (typeof BLOCKED_VIOLATIONS)[number];
+export type ClientViolationType = Exclude<ViolationType, "heartbeat_missed">;
+
+export const isCountedViolation = (t: ViolationType) => (COUNTED_VIOLATIONS as readonly string[]).includes(t);
+
+export const VIOLATION_LABELS: Record<ViolationType, string> = {
+  tab_hidden: "Switched tab or minimized",
+  window_blur: "Left the exam window",
+  fullscreen_exit: "Exited fullscreen",
+  multiple_monitors: "Extra monitor connected",
+  print_screen: "Pressed Print Screen",
+  heartbeat_missed: "Page stopped responding",
+  copy: "Tried to copy",
+  cut: "Tried to cut",
+  paste: "Tried to paste",
+  context_menu: "Opened the right-click menu",
+  blocked_shortcut: "Used a blocked shortcut",
+  devtools_shortcut: "Tried to open developer tools",
+};
+
+export interface ViolationReport {
+  attemptId: string;
+  type: ClientViolationType;
+  at: string;
+  durationMs?: number;
+}
+
+export interface ProctorState {
+  status: AttemptStatus;
+  violationCount: number;
+  maxViolations: number;
+}
+
+export interface Violation {
+  _id: string;
+  type: ViolationType;
+  counted: boolean;
+  clientAt: string;
+  serverAt: string;
+  durationMs?: number;
+  ip?: string;
+  userAgent?: string;
 }
 
 /** Question as a student sees it while taking an exam (no answers). */
@@ -254,7 +340,7 @@ export interface Answer {
   isFlagged?: boolean;
 }
 
-export type AttemptStatus = "in_progress" | "submitted" | "timed_out";
+export type AttemptStatus = "in_progress" | "submitted" | "timed_out" | "auto_submitted";
 
 export interface Attempt {
   _id: string;
@@ -273,11 +359,21 @@ export interface Attempt {
   timeTakenSeconds: number;
   status: AttemptStatus;
   certificateIssued: boolean;
+  violationCount?: number;
+}
+
+export interface InstructorAttempt extends Attempt {
+  user: Pick<User, "_id" | "firstName" | "lastName" | "email"> | null;
+  violationCount: number;
+  loggedEvents?: number;
 }
 
 export interface TakingView {
   attempt: Pick<Attempt, "_id" | "exam" | "status" | "startedAt" | "expiresAt" | "totalQuestions"> & {
     answers: Answer[];
+    /** Snapshot taken when the attempt started; missing on older attempts. */
+    proctoring?: ProctoringSettings;
+    violationCount?: number;
   };
   exam: { _id: string; title: string; emoji?: string; duration: number; passingScore: number; questions: Question[] };
   serverNow: string;

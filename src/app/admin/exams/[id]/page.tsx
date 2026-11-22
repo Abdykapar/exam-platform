@@ -5,9 +5,11 @@ import { ChevronLeft, ExternalLink, Eye, EyeOff, Loader2 } from "lucide-react";
 import { api, type InstructorExam } from "@/lib/api";
 import ExamForm, { toExamInput } from "@/components/admin/ExamForm";
 import QuestionsPanel from "@/components/admin/QuestionsPanel";
+import AttemptsPanel from "@/components/admin/AttemptsPanel";
 import { btnPrimary, btnSecondary, ErrorBanner, errMsg, StatusBadge } from "@/components/admin/ui";
 
-type Tab = "details" | "questions";
+type Tab = "details" | "questions" | "attempts";
+const TABS: Tab[] = ["details", "questions", "attempts"];
 
 export default function EditExamPage({
   params,
@@ -18,7 +20,7 @@ export default function EditExamPage({
 }) {
   const { id } = use(params);
   const { tab: tabParam } = use(searchParams);
-  const [tab, setTab] = useState<Tab>(tabParam === "questions" ? "questions" : "details");
+  const [tab, setTab] = useState<Tab>(TABS.find(t => t === tabParam) ?? "details");
   const [exam, setExam] = useState<InstructorExam | null>(null);
   const [error, setError] = useState("");
   const [publishing, setPublishing] = useState(false);
@@ -93,6 +95,7 @@ export default function EditExamPage({
         {([
           ["details", "Details"],
           ["questions", `Questions (${exam.questions.length})`],
+          ["attempts", "Attempts"],
         ] as const).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             className={`px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${tab === key ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
@@ -110,8 +113,10 @@ export default function EditExamPage({
             setExam(res.data.exam);
           }}
         />
-      ) : (
+      ) : tab === "questions" ? (
         <QuestionsPanel exam={exam} onChange={setExam} />
+      ) : (
+        <AttemptsPanel examId={exam._id} />
       )}
     </div>
   );

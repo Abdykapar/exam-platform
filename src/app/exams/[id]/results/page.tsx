@@ -96,6 +96,7 @@ export default function ResultsPage({
           <div className="text-sm text-white/70 mb-6">
             {formatDate(attempt.submittedAt)}
             {attempt.status === "timed_out" && " · Time ran out, graded from your saved answers"}
+            {attempt.status === "auto_submitted" && " · Submitted automatically after too many proctoring violations, graded from your saved answers"}
           </div>
           <div className="flex justify-center gap-8 text-sm">
             {[

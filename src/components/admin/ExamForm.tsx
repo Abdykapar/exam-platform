@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
-import { api, type Category, type Difficulty, type ExamInput, type InstructorExam } from "@/lib/api";
+import { api, DEFAULT_PROCTORING, type Category, type Difficulty, type ExamInput, type InstructorExam } from "@/lib/api";
 import { btnPrimary, ErrorBanner, errMsg, Field, inputCls } from "./ui";
 
 const DIFFICULTIES: Difficulty[] = ["Beginner", "Intermediate", "Advanced"];
@@ -19,6 +19,9 @@ interface FormState {
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
   maxAttempts: string;
+  proctoringEnabled: boolean;
+  maxViolations: string;
+  requireFullscreen: boolean;
 }
 
 /** Converts a loaded exam (whose category may be populated) into form input. */
@@ -35,6 +38,7 @@ export function toExamInput(exam: InstructorExam): ExamInput {
     shuffleQuestions: exam.shuffleQuestions,
     shuffleOptions: exam.shuffleOptions,
     maxAttempts: exam.maxAttempts,
+    proctoring: exam.proctoring ?? DEFAULT_PROCTORING,
   };
 }
 
@@ -50,6 +54,9 @@ const toState = (e?: ExamInput): FormState => ({
   shuffleQuestions: e?.shuffleQuestions ?? false,
   shuffleOptions: e?.shuffleOptions ?? false,
   maxAttempts: String(e?.maxAttempts ?? 0),
+  proctoringEnabled: e?.proctoring?.enabled ?? DEFAULT_PROCTORING.enabled,
+  maxViolations: String(e?.proctoring?.maxViolations ?? DEFAULT_PROCTORING.maxViolations),
+  requireFullscreen: e?.proctoring?.requireFullscreen ?? DEFAULT_PROCTORING.requireFullscreen,
 });
 
 export default function ExamForm({
@@ -95,6 +102,11 @@ export default function ExamForm({
         shuffleQuestions: form.shuffleQuestions,
         shuffleOptions: form.shuffleOptions,
         maxAttempts: Number(form.maxAttempts),
+        proctoring: {
+          enabled: form.proctoringEnabled,
+          maxViolations: Number(form.maxViolations),
+          requireFullscreen: form.requireFullscreen,
+        },
       });
       setSaved(true);
     } catch (err) {
@@ -170,6 +182,32 @@ export default function ExamForm({
           </label>
         ))}
       </div>
+
+      <fieldset className="border border-slate-200 rounded-xl p-4 space-y-4">
+        <legend className="px-1 text-sm font-semibold text-slate-700">Proctoring</legend>
+        <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+          <input type="checkbox" checked={form.proctoringEnabled} onChange={e => set("proctoringEnabled", e.target.checked)}
+            className="w-4 h-4 mt-0.5 rounded accent-indigo-600" />
+          <span>
+            Exam mode (anti-cheating)
+            <span className="block text-xs text-slate-400">
+              Detects tab switching, leaving the window, extra monitors and copy/paste. Logs every event, and submits automatically after too many violations.
+            </span>
+          </span>
+        </label>
+        {form.proctoringEnabled && (
+          <div className="grid sm:grid-cols-2 gap-4 items-start">
+            <Field label="Violations before auto-submit">
+              <input type="number" className={inputCls} value={form.maxViolations} onChange={e => set("maxViolations", e.target.value)} required min={1} max={20} />
+            </Field>
+            <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer sm:mt-8">
+              <input type="checkbox" checked={form.requireFullscreen} onChange={e => set("requireFullscreen", e.target.checked)}
+                className="w-4 h-4 rounded accent-indigo-600" />
+              Require fullscreen
+            </label>
+          </div>
+        )}
+      </fieldset>
 
       <div className="flex items-center gap-3 pt-2">
         <button type="submit" disabled={saving} className={btnPrimary}>
