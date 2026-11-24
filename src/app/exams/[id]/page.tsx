@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { Clock, Users, Star, Award, Shield, CheckCircle, BookOpen, ChevronRight, Repeat } from "lucide-react";
 import { api, categoryName, type Exam } from "@/lib/api";
+import JoinForm from "@/components/exam/JoinForm";
 
 const diffColor: Record<string, string> = {
   Beginner: "bg-emerald-100 text-emerald-700",
@@ -102,7 +103,14 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
               <h2 className="font-bold text-slate-800 text-lg mb-5">What to Expect</h2>
               <div className="grid sm:grid-cols-3 gap-4">
                 {[
-                  { icon: Clock, title: "Timed", desc: `${exam.duration} min total, ~${perQuestion} min per question`, color: "bg-indigo-50 text-indigo-600" },
+                  {
+                    icon: Clock,
+                    title: "Timed",
+                    desc: exam.perQuestionTiming
+                      ? "Each question has its own timer. You can't go back to earlier questions."
+                      : `${exam.duration} min total, ~${perQuestion} min per question`,
+                    color: "bg-indigo-50 text-indigo-600",
+                  },
                   {
                     icon: exam.maxAttempts ? Repeat : Shield,
                     title: exam.maxAttempts ? "Limited attempts" : "Autosaved",
@@ -163,10 +171,14 @@ export default function ExamDetailPage({ params }: { params: Promise<{ id: strin
                 ))}
               </div>
 
-              <Link href={`/exams/${exam._id}/take`}
-                className="block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:-translate-y-0.5 mb-3">
-                Start Exam Now
-              </Link>
+              {exam.requiresPassword ? (
+                <JoinForm examId={exam._id} />
+              ) : (
+                <Link href={`/exams/${exam._id}/take`}
+                  className="block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-all shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:-translate-y-0.5 mb-3">
+                  Start Exam Now
+                </Link>
+              )}
               <Link href="/exams"
                 className="block w-full text-center border border-slate-200 text-slate-600 font-semibold py-3 rounded-xl hover:bg-slate-50 transition-colors text-sm">
                 Browse Other Exams

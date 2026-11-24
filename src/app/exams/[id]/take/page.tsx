@@ -3,8 +3,9 @@ import { use, useState, useEffect, useCallback, useRef, type ReactNode } from "r
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Clock, ChevronLeft, ChevronRight, BookOpen, AlertCircle, Flag, Check, Loader2 } from "lucide-react";
-import { api, type Answer, type ProctoringSettings, type TakingView } from "@/lib/api";
+import { api, isResultView, type Answer, type ProctoringSettings, type TakingView } from "@/lib/api";
 import ExamGuard from "@/components/exam/ExamGuard";
+import { examPasswordKey } from "@/components/exam/JoinForm";
 import { useAuth } from "@/lib/auth-context";
 import { formatDuration, OPTION_LETTERS } from "@/lib/format";
 
@@ -25,6 +26,9 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers] = useState<Record<number, Answer>>({});
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  /** Per-question timing: seconds left on the current question. */
+  const [questionLeft, setQuestionLeft] = useState<number | null>(null);
+  const [advancing, setAdvancing] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -38,33 +42,54 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
   const clockOffset = useRef(0); // server time − client time, in ms
   const answersRef = useRef(answers);
   const startPromise = useRef<Promise<void> | null>(null);
+  const advancingRef = useRef(false);
 
   useEffect(() => {
     answersRef.current = answers;
   }, [answers]);
 
+  /** Shows the server's state. With per-question timing, the server also decides the current question. */
+  const applyView = useCallback((v: TakingView) => {
+    clockOffset.current = new Date(v.serverNow).getTime() - Date.now();
+    setAnswers(Object.fromEntries(v.attempt.answers.map(a => [a.questionIndex, a])));
+    setView(v);
+    if (v.attempt.perQuestionTiming) setCurrent(v.attempt.currentQuestion ?? 0);
+  }, []);
+
   /** Creates or resumes the attempt; safe to call more than once. */
   const startAttempt = useCallback(() => {
-    startPromise.current ??= api.exams.start(id)
+    let password: string | undefined;
+    try {
+      password = sessionStorage.getItem(examPasswordKey(id)) ?? undefined;
+    } catch {
+      // Storage blocked; the server says if a password is needed
+    }
+    startPromise.current ??= api.exams.start(id, password)
       .then(res => {
-        const v = res.data;
-        clockOffset.current = new Date(v.serverNow).getTime() - Date.now();
-        setAnswers(Object.fromEntries(v.attempt.answers.map(a => [a.questionIndex, a])));
-        setView(v);
+        try {
+          sessionStorage.removeItem(examPasswordKey(id));
+        } catch {
+          // ignore
+        }
+        applyView(res.data);
       })
       .catch(err => {
         startPromise.current = null;
         throw err;
       });
     return startPromise.current;
-  }, [id]);
+  }, [id, applyView]);
 
   // Load the exam once the user is known. Unproctored exams start right away;
   // proctored ones wait for the student to click Start (fullscreen needs a click).
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
-      router.replace(`/login?next=${encodeURIComponent(`/exams/${id}/take`)}`);
+      // Password-protected exams are joined from the exam page, without an account
+      api.exams.get(id)
+        .then(res => res.data.exam.requiresPassword)
+        .catch(() => false)
+        .then(byPassword => router.replace(byPassword ? `/exams/${id}` : `/login?next=${encodeURIComponent(`/exams/${id}/take`)}`));
       return;
     }
     if (started.current) return;
@@ -96,19 +121,53 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
     }
   }, [attemptId, answers, id, router]);
 
-  // Timer, driven by the server's expiresAt
+  /**
+   * Per-question timing: locks in the current answer and moves on (Next, or the
+   * question's time ran out). After the last question the server finishes the attempt.
+   */
+  const advance = useCallback(async () => {
+    if (!attemptId || advancingRef.current || submitted.current) return;
+    advancingRef.current = true;
+    setAdvancing(true);
+    try {
+      const res = await api.attempts.next(attemptId, current, Object.values(answersRef.current));
+      dirty.current = false;
+      if (isResultView(res.data)) {
+        submitted.current = true;
+        router.push(`/exams/${id}/results?attempt=${attemptId}`);
+        return;
+      }
+      setError("");
+      applyView(res.data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not go to the next question");
+    }
+    advancingRef.current = false;
+    setAdvancing(false);
+  }, [attemptId, current, id, router, applyView]);
+
+  // Timers, driven by the server's deadlines
   useEffect(() => {
     if (!view) return;
     const expiresAt = new Date(view.attempt.expiresAt).getTime();
+    const deadline = view.attempt.questionDeadline ? new Date(view.attempt.questionDeadline).getTime() : null;
     const tick = () => {
-      const left = Math.max(0, Math.round((expiresAt - (Date.now() + clockOffset.current)) / 1000));
+      const now = Date.now() + clockOffset.current;
+      const left = Math.max(0, Math.round((expiresAt - now) / 1000));
       setTimeLeft(left);
-      if (left === 0) submit(true);
+      if (deadline != null) {
+        // ceil: show 0 only once the time is really up
+        const qLeft = Math.max(0, Math.ceil((deadline - now) / 1000));
+        setQuestionLeft(qLeft);
+        if (qLeft === 0) advance(); // retried every tick if it fails
+      } else if (left === 0) {
+        submit(true);
+      }
     };
     tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, [view, submit]);
+  }, [view, submit, advance]);
 
   /** Saves unsaved answers now. Also run before each proctoring violation, so an auto-submit grades them. */
   const flushSave = useCallback(async () => {
@@ -159,6 +218,7 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
 
   const questions = view?.exam.questions ?? [];
   const q = questions[current];
+  const timed = !!view?.attempt.perQuestionTiming;
 
   const update = useCallback((index: number, patch: Partial<Answer>) => {
     dirty.current = true;
@@ -184,13 +244,14 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       const n = Number(e.key);
       if (n >= 1 && n <= q.options.length) select(n - 1);
+      else if (timed) return; // no free navigation with per-question timing
       else if (e.key === "ArrowRight") setCurrent(c => Math.min(questions.length - 1, c + 1));
       else if (e.key === "ArrowLeft") setCurrent(c => Math.max(0, c - 1));
       else if (e.key.toLowerCase() === "f") toggleFlag();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [q, questions.length, confirming, select, toggleFlag]);
+  }, [q, questions.length, confirming, timed, select, toggleFlag]);
 
   if (error && !view) {
     return (
@@ -230,9 +291,14 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
     );
   }
 
-  const totalTime = view.exam.duration * 60;
-  const timePercent = (timeLeft / totalTime) * 100;
-  const timerColor = timeLeft < 60 ? "text-red-600 animate-pulse" : timeLeft < 300 ? "text-red-500" : timeLeft < 600 ? "text-amber-500" : "text-emerald-500";
+  // Per-question timing shows the current question's countdown instead of the exam's
+  const shown = timed ? (questionLeft ?? q.timeLimit) : timeLeft;
+  const totalTime = timed ? q.timeLimit : view.exam.duration * 60;
+  const timePercent = Math.min(100, (shown / totalTime) * 100);
+  const [danger, warn, caution] = timed ? [5, 10, Math.max(15, totalTime / 4)] : [60, 300, 600];
+  const timerColor = shown < danger ? "text-red-600 animate-pulse" : shown < warn ? "text-red-500" : shown < caution ? "text-amber-500" : "text-emerald-500";
+  const barColor = shown < warn ? "bg-red-500" : shown < caution ? "bg-amber-500" : "bg-emerald-500";
+  const isLast = current === questions.length - 1;
   const answeredCount = questions.filter((_, i) => isAnswered(answers[i])).length;
   const unanswered = questions.map((_, i) => i).filter(i => !isAnswered(answers[i]));
   const flagged = questions.map((_, i) => i).filter(i => answers[i]?.isFlagged);
@@ -251,7 +317,7 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
           {/* Timer */}
           <div className={`flex items-center gap-2 font-mono font-bold text-lg ${timerColor}`}>
             <Clock size={18} />
-            {formatDuration(timeLeft)}
+            {formatDuration(shown)}
           </div>
 
           <div className="flex items-center gap-3">
@@ -260,16 +326,17 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
               {saveState === "saved" && <><Check size={12} className="text-emerald-500" /> Saved</>}
               {saveState === "error" && <span className="text-red-500">Not saved</span>}
             </span>
-            <button onClick={() => setConfirming(true)} disabled={submitting}
-              className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-semibold px-5 py-2 rounded-lg transition-colors">
-              Submit Exam
-            </button>
+            {!timed && (
+              <button onClick={() => setConfirming(true)} disabled={submitting}
+                className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-semibold px-5 py-2 rounded-lg transition-colors">
+                Submit Exam
+              </button>
+            )}
           </div>
         </div>
         {/* Timer bar */}
         <div className="h-1 bg-slate-200">
-          <div className={`h-full transition-all duration-1000 ${timeLeft < 300 ? "bg-red-500" : timeLeft < 600 ? "bg-amber-500" : "bg-emerald-500"}`}
-            style={{ width: `${timePercent}%` }} />
+          <div className={`h-full transition-all duration-1000 ${barColor}`} style={{ width: `${timePercent}%` }} />
         </div>
       </header>
 
@@ -328,6 +395,18 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
           </div>
 
           {/* Navigation */}
+          {timed ? (
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-xs text-slate-400">You can&apos;t return to a question after moving on.</p>
+              <button onClick={advance} disabled={advancing}
+                className={`flex items-center gap-2 px-5 py-2.5 text-white font-semibold text-sm rounded-xl transition-colors disabled:opacity-60 ${
+                  isLast ? "bg-emerald-600 hover:bg-emerald-700" : "bg-indigo-600 hover:bg-indigo-700"
+                }`}>
+                {advancing && <Loader2 size={16} className="animate-spin" />}
+                {isLast ? <>Finish <Check size={16} /></> : <>Next <ChevronRight size={16} /></>}
+              </button>
+            </div>
+          ) : (
           <div className="flex justify-between">
             <button onClick={() => setCurrent(c => Math.max(0, c - 1))} disabled={current === 0}
               className="flex items-center gap-2 px-5 py-2.5 border border-slate-200 text-slate-600 font-semibold text-sm rounded-xl hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
@@ -345,8 +424,9 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
               </button>
             )}
           </div>
+          )}
           <p className="text-xs text-slate-400 text-center hidden sm:block">
-            Shortcuts: 1–{q.options.length} select · ← → navigate · F flag
+            Shortcuts: 1–{q.options.length} select{timed ? "" : " · ← → navigate"} · F flag
           </p>
         </div>
 
@@ -358,8 +438,8 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
               {questions.map((_, i) => {
                 const isCurrent = i === current;
                 return (
-                  <button key={i} onClick={() => setCurrent(i)}
-                    className={`w-full aspect-square rounded-lg text-xs font-bold transition-all ${
+                  <button key={i} onClick={() => setCurrent(i)} disabled={timed}
+                    className={`w-full aspect-square rounded-lg text-xs font-bold transition-all disabled:cursor-default ${
                       isCurrent ? "ring-2 ring-indigo-500 ring-offset-1" : ""
                     } ${
                       answers[i]?.isFlagged ? "bg-amber-100 text-amber-700 border border-amber-300" :
@@ -384,7 +464,7 @@ export default function TakeExamPage({ params }: { params: Promise<{ id: string 
               ))}
             </div>
 
-            {unanswered.length > 0 && (
+            {!timed && unanswered.length > 0 && (
               <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2">
                 <AlertCircle size={14} className="text-amber-500 shrink-0 mt-0.5" />
                 <p className="text-xs text-amber-700">{unanswered.length} question{unanswered.length > 1 ? "s" : ""} unanswered</p>

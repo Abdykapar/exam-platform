@@ -31,10 +31,25 @@ export default function Navbar() {
 
           {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-8">
-            <Link href="/#features" className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors">Features</Link>
-            <Link href="/exams" className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors">Exams</Link>
-            <Link href="/#pricing" className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors">Pricing</Link>
-            <Link href="/#about" className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors">About</Link>
+            <Link
+              href="/#features"
+              className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors"
+            >
+              Features
+            </Link>
+            <Link
+              href="/exams"
+              className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors"
+            >
+              Exams
+            </Link>
+            {/* <Link href="/#pricing" className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors">Pricing</Link> */}
+            <Link
+              href="/#about"
+              className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors"
+            >
+              About
+            </Link>
           </nav>
 
           {/* Actions */}
@@ -42,26 +57,46 @@ export default function Navbar() {
             {loading ? null : user ? (
               <>
                 {canManage && (
-                  <Link href="/admin" className="text-sm font-medium text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors">
+                  <Link
+                    href="/admin"
+                    className="text-sm font-medium text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors"
+                  >
                     Admin
                   </Link>
                 )}
-                <Link href="/dashboard" className="text-sm font-medium text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors">
+                <Link
+                  href="/dashboard"
+                  className="text-sm font-medium text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors"
+                >
                   Dashboard
                 </Link>
-                <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold" title={`${user.firstName} ${user.lastName}`}>
-                  {user.firstName[0]}{user.lastName[0]}
+                <div
+                  className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold"
+                  title={`${user.firstName} ${user.lastName}`}
+                >
+                  {user.firstName[0]}
+                  {user.lastName[0]}
                 </div>
-                <button onClick={handleLogout} title="Log out" className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors">
+                <button
+                  onClick={handleLogout}
+                  title="Log out"
+                  className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                >
                   <LogOut size={17} />
                 </button>
               </>
             ) : (
               <>
-                <Link href="/login" className="text-sm font-medium text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors">
+                <Link
+                  href="/login"
+                  className="text-sm font-medium text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors"
+                >
                   Sign In
                 </Link>
-                <Link href="/register" className="text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg transition-colors shadow-sm">
+                <Link
+                  href="/register"
+                  className="text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
+                >
                   Get Started
                 </Link>
               </>
@@ -69,7 +104,10 @@ export default function Navbar() {
           </div>
 
           {/* Mobile burger */}
-          <button className="md:hidden p-2 text-slate-600" onClick={() => setOpen(!open)}>
+          <button
+            className="md:hidden p-2 text-slate-600"
+            onClick={() => setOpen(!open)}
+          >
             {open ? <X size={22} /> : <Menu size={22} />}
           </button>
         </div>
@@ -79,22 +117,55 @@ export default function Navbar() {
       {open && (
         <div className="md:hidden border-t border-slate-200 bg-white px-4 py-4 space-y-1">
           {["/#features", "/exams", "/#pricing", "/#about"].map((href, i) => (
-            <Link key={i} href={href} onClick={() => setOpen(false)}
-              className="block px-3 py-2 text-sm font-medium text-slate-700 rounded-lg hover:bg-slate-100">
+            <Link
+              key={i}
+              href={href}
+              onClick={() => setOpen(false)}
+              className="block px-3 py-2 text-sm font-medium text-slate-700 rounded-lg hover:bg-slate-100"
+            >
               {["Features", "Exams", "Pricing", "About"][i]}
             </Link>
           ))}
           <div className="pt-3 border-t border-slate-200 flex flex-col gap-2">
             {user ? (
               <>
-                {canManage && <Link href="/admin" onClick={() => setOpen(false)} className="block text-center px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg">Admin</Link>}
-                <Link href="/dashboard" onClick={() => setOpen(false)} className="block text-center px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg">Dashboard</Link>
-                <button onClick={handleLogout} className="block text-center px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg">Log out</button>
+                {canManage && (
+                  <Link
+                    href="/admin"
+                    onClick={() => setOpen(false)}
+                    className="block text-center px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg"
+                  >
+                    Admin
+                  </Link>
+                )}
+                <Link
+                  href="/dashboard"
+                  onClick={() => setOpen(false)}
+                  className="block text-center px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg"
+                >
+                  Dashboard
+                </Link>
+                <button
+                  onClick={handleLogout}
+                  className="block text-center px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg"
+                >
+                  Log out
+                </button>
               </>
             ) : (
               <>
-                <Link href="/login" className="block text-center px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg">Sign In</Link>
-                <Link href="/register" className="block text-center px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg">Get Started</Link>
+                <Link
+                  href="/login"
+                  className="block text-center px-4 py-2 text-sm font-medium text-slate-700 border border-slate-300 rounded-lg"
+                >
+                  Sign In
+                </Link>
+                <Link
+                  href="/register"
+                  className="block text-center px-4 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg"
+                >
+                  Get Started
+                </Link>
               </>
             )}
           </div>

@@ -1,8 +1,8 @@
 "use client";
 import { useState } from "react";
 import { ArrowDown, ArrowUp, Check, FileJson, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
-import { api, type InstructorExam, type InstructorQuestion, type QuestionInput } from "@/lib/api";
-import { OPTION_LETTERS } from "@/lib/format";
+import { api, DEFAULT_TIME_LIMIT, type InstructorExam, type InstructorQuestion, type QuestionInput } from "@/lib/api";
+import { formatDuration, OPTION_LETTERS } from "@/lib/format";
 import QuestionEditor from "./QuestionEditor";
 import { btnPrimary, btnSecondary, ErrorBanner, errMsg, inputCls } from "./ui";
 
@@ -28,6 +28,8 @@ export default function QuestionsPanel({ exam, onChange }: { exam: InstructorExa
 
   const questions = exam.questions;
   const totalPoints = questions.reduce((s, q) => s + q.points, 0);
+  const timed = !!exam.perQuestionTiming;
+  const totalSeconds = questions.reduce((s, q) => s + (q.timeLimit ?? DEFAULT_TIME_LIMIT), 0);
 
   const run = async (call: () => ExamResponse) => {
     setBusy(true);
@@ -91,7 +93,7 @@ export default function QuestionsPanel({ exam, onChange }: { exam: InstructorExa
 
       {questions.map((q, i) =>
         editing === q._id ? (
-          <QuestionEditor key={q._id} initial={q} number={i + 1} onSave={save} onCancel={() => setEditing(null)} />
+          <QuestionEditor key={q._id} initial={q} number={i + 1} timed={timed} onSave={save} onCancel={() => setEditing(null)} />
         ) : (
           <div key={q._id} className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-5 ${busy ? "opacity-60" : ""}`}>
             <div className="flex items-start gap-3">
@@ -101,6 +103,7 @@ export default function QuestionsPanel({ exam, onChange }: { exam: InstructorExa
                 <div className="flex flex-wrap gap-2 mt-1.5 text-xs text-slate-400">
                   <span>{q.type === "multiple" ? "Multiple answers" : "One answer"}</span>·
                   <span>{q.points} point{q.points > 1 ? "s" : ""}</span>
+                  {timed && <>·<span>{q.timeLimit ?? DEFAULT_TIME_LIMIT}s</span></>}
                 </div>
                 <ul className="mt-3 grid sm:grid-cols-2 gap-1.5">
                   {q.options.map((opt, oi) => (
@@ -129,7 +132,7 @@ export default function QuestionsPanel({ exam, onChange }: { exam: InstructorExa
       )}
 
       {editing === "new" && (
-        <QuestionEditor number={questions.length + 1} onSave={save} onCancel={() => setEditing(null)} />
+        <QuestionEditor number={questions.length + 1} timed={timed} onSave={save} onCancel={() => setEditing(null)} />
       )}
 
       {importing && (
@@ -159,6 +162,7 @@ export default function QuestionsPanel({ exam, onChange }: { exam: InstructorExa
 
       <div className="sticky bottom-0 bg-slate-50/95 backdrop-blur border-t border-slate-200 -mx-1 px-1 py-3 text-sm text-slate-500">
         {questions.length} question{questions.length === 1 ? "" : "s"} · {totalPoints} point{totalPoints === 1 ? "" : "s"} total
+        {timed && <> · {formatDuration(totalSeconds)} total time</>}
       </div>
     </div>
   );

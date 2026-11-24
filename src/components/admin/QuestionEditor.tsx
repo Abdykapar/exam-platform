@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Check, Loader2, Plus, X } from "lucide-react";
-import type { InstructorQuestion, QuestionInput, QuestionType } from "@/lib/api";
+import { DEFAULT_TIME_LIMIT, type InstructorQuestion, type QuestionInput, type QuestionType } from "@/lib/api";
 import { OPTION_LETTERS } from "@/lib/format";
 import { btnPrimary, btnSecondary, ErrorBanner, errMsg, Field, inputCls } from "./ui";
 
@@ -16,11 +16,14 @@ function initialCorrect(q?: InstructorQuestion): number[] {
 export default function QuestionEditor({
   initial,
   number,
+  timed,
   onSave,
   onCancel,
 }: {
   initial?: InstructorQuestion;
   number: number;
+  /** The exam uses per-question timing, so show the time field. */
+  timed: boolean;
   onSave: (input: QuestionInput) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -30,6 +33,7 @@ export default function QuestionEditor({
   const [correct, setCorrect] = useState<number[]>(() => initialCorrect(initial));
   const [points, setPoints] = useState(String(initial?.points ?? 1));
   const [explanation, setExplanation] = useState(initial?.explanation ?? "");
+  const [timeLimit, setTimeLimit] = useState(String(initial?.timeLimit ?? DEFAULT_TIME_LIMIT));
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -65,6 +69,7 @@ export default function QuestionEditor({
         options: trimmed,
         points: Number(points) || 1,
         explanation: explanation.trim(),
+        timeLimit: Number(timeLimit) || DEFAULT_TIME_LIMIT,
         ...(type === "multiple" ? { correctIndexes: sorted } : { correctIndex: sorted[0] }),
       });
     } catch (err) {
@@ -127,10 +132,15 @@ export default function QuestionEditor({
         )}
       </div>
 
-      <div className="grid sm:grid-cols-[120px_1fr] gap-4">
+      <div className={`grid gap-4 ${timed ? "sm:grid-cols-[120px_120px_1fr]" : "sm:grid-cols-[120px_1fr]"}`}>
         <Field label="Points">
           <input type="number" className={inputCls} value={points} onChange={e => setPoints(e.target.value)} min={1} max={100} required />
         </Field>
+        {timed && (
+          <Field label="Time (seconds)">
+            <input type="number" className={inputCls} value={timeLimit} onChange={e => setTimeLimit(e.target.value)} min={5} max={3600} required />
+          </Field>
+        )}
         <Field label="Explanation (optional)" hint="Shown to students on the results page.">
           <input className={inputCls} value={explanation} onChange={e => setExplanation(e.target.value)} maxLength={2000}
             placeholder="Why the correct answer is correct" />

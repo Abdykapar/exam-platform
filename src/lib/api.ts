@@ -83,7 +83,11 @@ export const api = {
       return request<Res<{ exams: Exam[]; total: number; pages: number; page: number }>>(`/exams${q ? `?${q}` : ""}`);
     },
     get: (id: string) => request<Res<{ exam: Exam }>>(`/exams/${id}`),
-    start: (examId: string) => request<Res<TakingView>>(`/exams/${examId}/start`, json("POST")),
+    start: (examId: string, password?: string) =>
+      request<Res<TakingView>>(`/exams/${examId}/start`, json("POST", password ? { password } : {})),
+    /** Guests: enter a password-protected exam with a name. Returns a token valid for this exam only. */
+    join: (examId: string, body: { firstName: string; lastName: string; password: string }) =>
+      request<Res<{ user: User }> & { token: string }>(`/exams/${examId}/join`, json("POST", body)),
 
     // Instructor / admin
     create: (body: ExamInput) => request<Res<{ exam: InstructorExam }>>("/exams", json("POST", body)),
@@ -129,7 +133,10 @@ export const api = {
     /** In-progress attempts return the taking view; finished ones return the result view. */
     get: (attemptId: string) => request<Res<TakingView | ResultView>>(`/attempts/${attemptId}`),
     saveAnswers: (attemptId: string, answers: Answer[]) =>
-      request<Res<{ savedAt: string; proctoring?: ProctorState }>>(`/attempts/${attemptId}/answers`, json("PATCH", { answers })),
+      request<Res<{ savedAt: string; currentQuestion: number; proctoring?: ProctorState }>>(`/attempts/${attemptId}/answers`, json("PATCH", { answers })),
+    /** Per-question timing: finish question `index` and move on. Returns the result view after the last one. */
+    next: (attemptId: string, index: number, answers: Answer[]) =>
+      request<Res<TakingView | ResultView>>(`/attempts/${attemptId}/next`, json("POST", { index, answers })),
     submit: (attemptId: string, body: { answers: Answer[]; timedOut?: boolean }) =>
       request<Res<ResultView>>(`/attempts/${attemptId}/submit`, json("POST", body)),
   },
@@ -197,6 +204,8 @@ export interface User {
   role: Role;
   bio?: string;
   avatar?: string;
+  /** Joined a password-protected exam by link, without an account. */
+  isGuest?: boolean;
   createdAt: string;
 }
 
@@ -228,6 +237,9 @@ export interface Exam {
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
   maxAttempts: number;
+  perQuestionTiming?: boolean;
+  /** Link-only exam: students need the password to start. */
+  requiresPassword?: boolean;
   /** Missing on exams created before proctoring existed. */
   proctoring?: ProctoringSettings;
   isPublished: boolean;
@@ -247,6 +259,9 @@ export interface ExamInput {
   shuffleQuestions?: boolean;
   shuffleOptions?: boolean;
   maxAttempts?: number;
+  perQuestionTiming?: boolean;
+  /** Empty = no password. */
+  accessPassword?: string;
   proctoring?: ProctoringSettings;
 }
 
@@ -317,6 +332,8 @@ export interface Question {
   text: string;
   options: string[];
   points: number;
+  /** Seconds; only enforced with per-question timing. */
+  timeLimit: number;
 }
 
 export interface QuestionInput {
@@ -327,11 +344,17 @@ export interface QuestionInput {
   correctIndexes?: number[];
   points?: number;
   explanation?: string;
+  timeLimit?: number;
 }
 
 export type InstructorQuestion = QuestionInput & { _id: string; type: QuestionType; points: number };
 
-export type InstructorExam = Omit<Exam, "questionCount"> & { questions: InstructorQuestion[] };
+export type InstructorExam = Omit<Exam, "questionCount" | "requiresPassword"> & {
+  questions: InstructorQuestion[];
+  accessPassword?: string;
+};
+
+export const DEFAULT_TIME_LIMIT = 60;
 
 export interface Answer {
   questionIndex: number;
@@ -363,7 +386,7 @@ export interface Attempt {
 }
 
 export interface InstructorAttempt extends Attempt {
-  user: Pick<User, "_id" | "firstName" | "lastName" | "email"> | null;
+  user: Pick<User, "_id" | "firstName" | "lastName" | "email" | "isGuest"> | null;
   violationCount: number;
   loggedEvents?: number;
 }
@@ -374,6 +397,10 @@ export interface TakingView {
     /** Snapshot taken when the attempt started; missing on older attempts. */
     proctoring?: ProctoringSettings;
     violationCount?: number;
+    perQuestionTiming?: boolean;
+    currentQuestion?: number;
+    /** Per-question timing: when the current question's time runs out. */
+    questionDeadline?: string | null;
   };
   exam: { _id: string; title: string; emoji?: string; duration: number; passingScore: number; questions: Question[] };
   serverNow: string;

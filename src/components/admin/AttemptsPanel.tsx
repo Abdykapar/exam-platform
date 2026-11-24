@@ -64,7 +64,7 @@ export default function AttemptsPanel({ examId }: { examId: string }) {
                 {isOpen ? <ChevronDown size={16} className="text-slate-400 shrink-0" /> : <ChevronRight size={16} className="text-slate-400 shrink-0" />}
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-sm text-slate-800 truncate">{studentName(a)}</div>
-                  <div className="text-xs text-slate-400 truncate">{a.user?.email} · {formatDate(a.startedAt)}</div>
+                  <div className="text-xs text-slate-400 truncate">{a.user?.isGuest ? "Guest" : a.user?.email} · {formatDate(a.startedAt)}</div>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
                   {a.violationCount > 0 ? (

@@ -9,6 +9,8 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (data: { firstName: string; lastName: string; email: string; password: string; role: string }) => Promise<void>;
   logout: () => void;
+  /** Signs in with a token from elsewhere (guest exam join). */
+  setSession: (token: string, user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -45,6 +47,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.data.user);
   };
 
+  const setSession = (t: string, u: User) => {
+    localStorage.setItem("token", t);
+    setToken(t);
+    setUser(u);
+  };
+
   const logout = () => {
     localStorage.removeItem("token");
     setToken(null);
@@ -52,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, setSession }}>
       {children}
     </AuthContext.Provider>
   );

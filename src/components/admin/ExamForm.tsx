@@ -19,6 +19,8 @@ interface FormState {
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
   maxAttempts: string;
+  perQuestionTiming: boolean;
+  accessPassword: string;
   proctoringEnabled: boolean;
   maxViolations: string;
   requireFullscreen: boolean;
@@ -38,6 +40,8 @@ export function toExamInput(exam: InstructorExam): ExamInput {
     shuffleQuestions: exam.shuffleQuestions,
     shuffleOptions: exam.shuffleOptions,
     maxAttempts: exam.maxAttempts,
+    perQuestionTiming: exam.perQuestionTiming ?? false,
+    accessPassword: exam.accessPassword ?? "",
     proctoring: exam.proctoring ?? DEFAULT_PROCTORING,
   };
 }
@@ -54,6 +58,8 @@ const toState = (e?: ExamInput): FormState => ({
   shuffleQuestions: e?.shuffleQuestions ?? false,
   shuffleOptions: e?.shuffleOptions ?? false,
   maxAttempts: String(e?.maxAttempts ?? 0),
+  perQuestionTiming: e?.perQuestionTiming ?? false,
+  accessPassword: e?.accessPassword ?? "",
   proctoringEnabled: e?.proctoring?.enabled ?? DEFAULT_PROCTORING.enabled,
   maxViolations: String(e?.proctoring?.maxViolations ?? DEFAULT_PROCTORING.maxViolations),
   requireFullscreen: e?.proctoring?.requireFullscreen ?? DEFAULT_PROCTORING.requireFullscreen,
@@ -102,6 +108,8 @@ export default function ExamForm({
         shuffleQuestions: form.shuffleQuestions,
         shuffleOptions: form.shuffleOptions,
         maxAttempts: Number(form.maxAttempts),
+        perQuestionTiming: form.perQuestionTiming,
+        accessPassword: form.accessPassword.trim(),
         proctoring: {
           enabled: form.proctoringEnabled,
           maxViolations: Number(form.maxViolations),
@@ -155,8 +163,9 @@ export default function ExamForm({
       </div>
 
       <div className="grid sm:grid-cols-3 gap-4">
-        <Field label="Duration (minutes)">
-          <input type="number" className={inputCls} value={form.duration} onChange={e => set("duration", e.target.value)} required min={1} max={600} />
+        <Field label="Duration (minutes)" hint={form.perQuestionTiming ? "Sum of the question times" : undefined}>
+          <input type="number" className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`} value={form.duration}
+            onChange={e => set("duration", e.target.value)} required min={1} max={600} disabled={form.perQuestionTiming} />
         </Field>
         <Field label="Passing score (%)">
           <input type="number" className={inputCls} value={form.passingScore} onChange={e => set("passingScore", e.target.value)} required min={0} max={100} />
@@ -182,6 +191,26 @@ export default function ExamForm({
           </label>
         ))}
       </div>
+
+      <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+        <input type="checkbox" checked={form.perQuestionTiming} onChange={e => set("perQuestionTiming", e.target.checked)}
+          className="w-4 h-4 mt-0.5 rounded accent-indigo-600" />
+        <span>
+          Time limit per question
+          <span className="block text-xs text-slate-400">
+            Students see one question at a time with its own countdown, and can&apos;t go back. Set each question&apos;s time on the Questions tab.
+          </span>
+        </span>
+      </label>
+
+      <fieldset className="border border-slate-200 rounded-xl p-4 space-y-3">
+        <legend className="px-1 text-sm font-semibold text-slate-700">Access</legend>
+        <Field label="Exam password (optional)"
+          hint="With a password, the exam is hidden from the catalog. Share the link; students enter their name and this password, no account needed.">
+          <input className={inputCls} value={form.accessPassword} onChange={e => set("accessPassword", e.target.value)}
+            maxLength={64} placeholder="Leave empty for a public exam" autoComplete="off" />
+        </Field>
+      </fieldset>
 
       <fieldset className="border border-slate-200 rounded-xl p-4 space-y-4">
         <legend className="px-1 text-sm font-semibold text-slate-700">Proctoring</legend>
