@@ -59,12 +59,32 @@ export default function EditExamPage({
   const noQuestions = exam.questions.length === 0;
 
   const copyLink = async () => {
+    const link = `${window.location.origin}/exams/${exam._id}`;
+    let ok = false;
     try {
-      await navigator.clipboard.writeText(`${window.location.origin}/exams/${exam._id}`);
+      // Only available on HTTPS or localhost
+      await navigator.clipboard.writeText(link);
+      ok = true;
+    } catch {
+      // Plain HTTP: fall back to the legacy copy command
+      const ta = document.createElement("textarea");
+      ta.value = link;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        ok = document.execCommand("copy");
+      } catch {
+        ok = false;
+      }
+      ta.remove();
+    }
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setError("Could not copy the link");
+    } else {
+      window.prompt("Copy this link:", link);
     }
   };
 
